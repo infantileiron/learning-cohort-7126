@@ -1,8 +1,9 @@
 import random
 from datetime import date,timedelta,datetime,timezone
 from src.config.database import Base,engine,Session
-from src.models.entities import User,Event
+from src.models.entities import User,Event,DepartmentAssignment
 from src.utils.security import hash_password
+from src.constants.enums import DEPARTMENTS
 def seed():
  Base.metadata.create_all(engine);rng=random.Random(3114);start=date(2026,9,21)
  with Session() as s:
@@ -19,5 +20,9 @@ def seed():
     if i%17==0:
      code+='-DUP'
      if not s.query(Event).filter_by(code=code).first():s.add(Event(code=code,learner=learner,occurred_at=day.isoformat()+'T04:00:00+00:00',course='数据素养',note='同周重复回访，不重复计人数'))
-  s.commit();print({'users':s.query(User).count(),'events':s.query(Event).count(),'learners':len({r.learner for r in s.query(Event).all()})})
+  for i in range(197):
+   learner=f'CQ-{i+1:03}'
+   if not s.query(DepartmentAssignment).filter_by(learner=learner).first():
+    s.add(DepartmentAssignment(learner=learner,department=DEPARTMENTS[i//50],valid_from='2026-09-01',valid_to=None,registered_at='2026-09-01T00:00:00+00:00',note='初始花名册'))
+  s.commit();print({'users':s.query(User).count(),'events':s.query(Event).count(),'learners':len({r.learner for r in s.query(Event).all()}),'assignments':s.query(DepartmentAssignment).count()})
 if __name__=='__main__':seed()

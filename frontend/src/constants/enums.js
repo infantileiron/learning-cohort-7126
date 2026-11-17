@@ -1,1 +1,1 @@
-export const COURSES=['数据素养','服务沟通','安全规范'];export const ROLES=['admin','analyst','viewer'];export const STATES=['queued','running','done','failed'];export const STAGES=['draft','approved'];
+export const COURSES=['数据素养','服务沟通','安全规范'];export const ROLES=['admin','analyst','viewer'];export const STATES=['queued','running','done','failed'];export const STAGES=['draft','approved'];export const DEPARTMENTS=['客服一部','客服二部','运营支持部','数据洞察组'];export const CORRECTION_STATES={processing:'处理中',effective:'已生效'};

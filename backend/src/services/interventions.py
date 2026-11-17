@@ -7,4 +7,6 @@ def draft(s,cohort,data):
  cell=next((c for c in row['cells'] if c['week_index']==data.week_index),None)
  if not cell or not cell['mature']:raise HTTPException(409,'未成熟或超出观察范围的周禁止生成干预')
  if not cell['missing']:raise HTTPException(409,'该成熟周全部回访，没有待干预成员')
- r=Intervention(**data.model_dump(),members=cell['missing']);s.add(r);s.commit();return r
+ attribution=(cohort.result or {}).get('attribution') or {}
+ members=cell['missing']
+ r=Intervention(**data.model_dump(),members=members,attributions={m:attribution.get(m) for m in members});s.add(r);s.commit();return r

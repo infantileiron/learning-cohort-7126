@@ -6,7 +6,7 @@
 
 模拟客户常青企业大学，运营组服务200名学员。原工作流从学习平台导出 `常青_学习事件_20261115.xlsx`，用工作簿手工找首学日期、统计每周回访，再复制缺席名单到周会纪要。三个痛点：同周多事件重复计人数、截断历史把老学员误算新客、未观察完整的周被当成零留存。上游是学习事件；本项目替代队列计算、成熟判断与成员核对；下游由学习负责人签核辅导安排。
 
-四个业务模块：事件台账（录入/完整字段修订）、队列配置、留存矩阵（冻结版本/成熟遮罩/成员来源）、干预清单（站内草案/管理员签核/导出）。业务实体为Event、Cohort、Intervention，另有User和Audit。
+四个业务模块：事件台账（录入/完整字段修订）、队列配置、留存矩阵（冻结版本/成熟遮罩/成员来源）、干预清单（站内草案/管理员签核/导出），另有调岗更正（部门区间登记/追溯更正/辅导转交）。业务实体为Event、Cohort、Intervention、DepartmentAssignment、Correction、Transfer，另有User和Audit。
 
 |角色|权限与典型动作|
 |---|---|
@@ -46,6 +46,14 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 干预清单只能选已成功方案、成熟非W0列且有未回访成员的单元格。成员由服务端从冻结结果生成，忽略客户端自报名单；未成熟/空清单409。签核后说明和名单不可覆盖。仅站内保留行动记录，不向学员外发消息。
 
+## 调岗更正与部门归属
+
+工号的部门归属按**生效区间+登记时间**双时态登记（`department_assignments`），记录只增不改，保留更正前认知。归属解析：在登记时间不晚于所选**知悉时点**、且覆盖目标日期的区间中，取登记最新者（并列取id最大者）；追溯更正只覆盖其生效段，段外仍由旧登记接管（追溯拆分）。新队列方案按配置的知悉时点还原归属，缺省为提交时。
+
+队列分母按**首学日部门**固定，后续周回访沿用该部门；无覆盖区间的学员列为**未知归属**，与各部门人数合计同队列总人数对账（`reconciliation.balanced`）。已冻结矩阵不受后续更正影响，旧报告始终可读可导出。
+
+调岗更正（`corrections`）受理即登记追溯区间并置**处理中**，worker把该学员在未签核辅导中的归属按最新有效归属转交（`transfers`记录从→往，即转交依据），转交齐全后才置**已生效**；已签核辅导的归属保留。重试与worker重启恢复均幂等，同一更正不新增转交（唯一键`correction_id+intervention_id+learner`兜底）。签核与转交都用条件更新（仅当`status='draft'`）防止并发混用归属。调岗更正页展示登记台账、按知悉时点的历史认知、当前归属与每笔转交依据。
+
 ## 工程与本地开发
 
 |部分|实现|
@@ -57,10 +65,10 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 目录：backend/src下routes/controllers/services/models/schemas/middlewares/config/utils/constants；frontend/src下api/stores/pages/components/common/hooks/utils/constants/types/router；backend/scripts/seed_demo.py；backend/migrations/001_initial.sql。所有计算/校验在Python，前端仅展示/交互。共有表格、表单字段、状态标签组件，form hook和HTML转义工具；请求ID与安全响应头两个中间件，写入业务审计和全局错误处理。
 
-共享枚举：ROLES、STATES、COURSES、STAGES在后端src/constants/enums.py与前端src/constants/enums.js；schema/business.py约束课程与配置，models/entities.py存储状态。实例数据与队列名隔离；backend/worker依赖db和Redis健康，worker还等backend，frontend等backend。数据库、Redis和/artifacts均命名卷；五服务各有healthcheck。worker每轮刷新/tmp/heartbeat，结果在共享/artifacts。Nginx `/api/`去前缀代理到后端根路由。
+共享枚举：ROLES、STATES、COURSES、STAGES、DEPARTMENTS、CORRECTION_STATES在后端src/constants/enums.py与前端src/constants/enums.js；schema/business.py约束课程、部门与配置，models/entities.py存储状态。实例数据与队列名隔离；backend/worker依赖db和Redis健康，worker还等backend，frontend等backend。数据库、Redis和/artifacts均命名卷；五服务各有healthcheck。worker每轮刷新/tmp/heartbeat，结果在共享/artifacts；worker同时消费cohort:jobs与correction:jobs，启动时恢复queued/running方案与处理中更正。Nginx `/api/`去前缀代理到后端根路由。
 
 环境变量见.env.example：COMPOSE_PROJECT_NAME、FRONTEND_PORT、BACKEND_PORT、DB_PORT、DB_PASSWORD、JWT_SECRET、SEED_DEMO、NETWORK_SUBNET。子网10.253.114.0/24规避本机默认地址池耗尽，移机可调整。部署时替换演示密码与JWT密钥。
 
-本地开发可只起db/redis，backend安装requirements、设置DATABASE_URL/REDIS_URL/JWT_SECRET后 `uvicorn src.main:app --reload`；前端使用Nginx同源代理。ORM首次建表，初始MySQL DDL在migrations内；无在线版本迁移执行器。清理本项目：`docker compose down -v --remove-orphans`。
+本地开发可只起db/redis，backend安装requirements、设置DATABASE_URL/REDIS_URL/JWT_SECRET后 `uvicorn src.main:app --reload`；前端使用Nginx同源代理。ORM首次建表，初始MySQL DDL在migrations内（002为调岗更正新增表与列）；无在线版本迁移执行器。清理本项目：`docker compose down -v --remove-orphans`。
 
 范围：逐条表单/API输入，无CSV批导、删除或课程级独立留存；目前所有课程共同定义“学习回访”。单worker、无外部学员通讯或生产学习平台连接，不宣称多worker exactly-once。Google Fonts离线时回退serif/sans-serif。测试/截图在../../test-artifacts/gb-3114，源码不放证据。MIT许可证，见LICENSE。
